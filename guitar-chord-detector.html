@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guitar Chord Detector</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:#0d0d0f; --surface:#16161a; --surface2:#1e1e24;
+    --border:#2a2a35; --accent:#e8ff47; --accent2:#ff6b35;
+    --text:#f0f0f5; --muted:#6b6b80; --sc:#c8a96e; --fc:#3a3a48;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--text);font-family:'Syne',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:24px 16px;background-image:radial-gradient(ellipse at 20% 10%,rgba(232,255,71,0.04) 0%,transparent 50%),radial-gradient(ellipse at 80% 90%,rgba(255,107,53,0.04) 0%,transparent 50%);}
+  header{text-align:center;margin-bottom:32px;}
+  header h1{font-size:clamp(28px,5vw,48px);font-weight:800;letter-spacing:-1px;line-height:1;}
+  header h1 span{color:var(--accent);}
+  header p{color:var(--muted);font-family:'Space Mono',monospace;font-size:12px;margin-top:8px;letter-spacing:2px;text-transform:uppercase;}
+  .main-layout{display:flex;flex-direction:column;align-items:center;gap:24px;width:100%;max-width:980px;}
+
+  /* CHORD DISPLAY */
+  .chord-display{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px 32px;text-align:center;width:100%;position:relative;overflow:hidden;min-height:130px;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .chord-display::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:0;transition:opacity 0.3s;}
+  .chord-display.has-chord::before{opacity:1;}
+  .chord-name{font-size:clamp(40px,8vw,80px);font-weight:800;letter-spacing:-2px;color:var(--accent);line-height:1;}
+  .chord-name.empty{font-size:18px;color:var(--muted);font-weight:400;letter-spacing:0;}
+  .chord-type{font-family:'Space Mono',monospace;font-size:12px;color:var(--muted);margin-top:6px;letter-spacing:2px;text-transform:uppercase;}
+  .notes-used{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;justify-content:center;}
+  .note-pill{background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:3px 10px;font-family:'Space Mono',monospace;font-size:11px;color:var(--text);}
+  .note-pill.root{border-color:var(--accent);color:var(--accent);}
+
+  /* FRETBOARD */
+  .fretboard-wrapper{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:100%;overflow-x:auto;}
+  .fretboard-label{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;}
+  .fretboard{position:relative;min-width:680px;}
+  /* header row: open-col + fret cols */
+  .fb-header{display:grid;grid-template-columns:40px 44px repeat(12,1fr);margin-bottom:4px;}
+  .fb-header .fret-num{text-align:center;font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);}
+  .strings-area{display:flex;flex-direction:column;position:relative;}
+  .string-row{display:grid;grid-template-columns:40px 44px repeat(12,1fr);align-items:center;height:52px;position:relative;}
+  /* string label */
+  .string-name{font-family:'Space Mono',monospace;font-size:13px;font-weight:700;color:var(--sc);text-align:center;z-index:2;position:relative;}
+  /* open string circle */
+  .open-cell{display:flex;align-items:center;justify-content:center;height:52px;cursor:pointer;z-index:3;position:relative;}
+  .open-dot{width:26px;height:26px;border-radius:50%;border:2px solid var(--border);background:transparent;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:9px;font-weight:700;color:transparent;transition:all 0.15s;}
+  .open-cell:hover .open-dot{border-color:var(--accent);background:rgba(232,255,71,0.1);color:var(--accent);}
+  .open-cell.active .open-dot{background:transparent;border-color:var(--accent);color:var(--accent);box-shadow:0 0 10px rgba(232,255,71,0.4);}
+  /* string line behind frets */
+  .string-line{position:absolute;left:84px;right:0;height:2px;background:linear-gradient(90deg,var(--sc) 0%,#9a7a4a);top:50%;transform:translateY(-50%);z-index:1;pointer-events:none;}
+  .string-row[data-str="0"] .string-line{height:1px;opacity:0.7;}
+  .string-row[data-str="1"] .string-line{height:1.5px;opacity:0.8;}
+  .string-row[data-str="2"] .string-line{height:2px;}
+  .string-row[data-str="3"] .string-line{height:2.5px;}
+  .string-row[data-str="4"] .string-line{height:3px;}
+  .string-row[data-str="5"] .string-line{height:3.5px;}
+  /* nut */
+  .nut-line{position:absolute;left:84px;top:0;bottom:0;width:4px;background:var(--sc);z-index:2;pointer-events:none;}
+  /* fret cells */
+  .fret-cell{position:relative;height:52px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2;}
+  .fret-cell::after{content:'';position:absolute;right:0;top:0;bottom:0;width:2px;background:var(--fc);z-index:1;pointer-events:none;}
+  .dot{width:32px;height:32px;border-radius:50%;border:2px solid var(--border);background:transparent;transition:all 0.15s;z-index:4;position:relative;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:10px;font-weight:700;color:transparent;}
+  .fret-cell:hover .dot{border-color:var(--accent);background:rgba(232,255,71,0.1);color:var(--accent);}
+  .fret-cell.active .dot{background:var(--accent);border-color:var(--accent);color:#0d0d0f;box-shadow:0 0 16px rgba(232,255,71,0.5);}
+  .fret-markers{display:grid;grid-template-columns:40px 44px repeat(12,1fr);margin-top:6px;}
+  .fret-marker-dot{display:flex;justify-content:center;align-items:center;height:14px;}
+  .fret-marker-dot.has-dot::after{content:'';width:6px;height:6px;background:var(--border);border-radius:50%;}
+
+  /* CONTROLS */
+  .controls{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;width:100%;}
+  .btn{font-family:'Space Mono',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;padding:10px 20px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;transition:all 0.15s;}
+  .btn:hover{border-color:var(--accent);color:var(--accent);}
+  .btn.danger{border-color:#ff4444;color:#ff4444;}
+  .btn.danger:hover{background:rgba(255,68,68,0.1);}
+
+  /* PANELS */
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:100%;}
+  .panel.hidden{display:none;}
+  .panel-title{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:16px;}
+  .panel-title span{color:var(--accent);}
+  .browser-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .tab-btn{font-family:'Space Mono',monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all 0.15s;}
+  .tab-btn:hover{color:var(--text);border-color:var(--muted);}
+  .tab-btn.active{background:var(--surface2);border-color:var(--accent2);color:var(--accent2);}
+  .chord-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;}
+  .chord-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 8px;cursor:pointer;transition:all 0.15s;text-align:center;}
+  .chord-card:hover{border-color:var(--accent2);transform:translateY(-2px);}
+  .chord-card.active-card{border-color:var(--accent);background:rgba(232,255,71,0.05);}
+  .cc-name{font-size:18px;font-weight:800;color:var(--accent2);line-height:1;}
+  .cc-pos{font-family:'Space Mono',monospace;font-size:8px;color:var(--muted);margin-top:2px;}
+  .mini-diagram{margin-top:6px;display:inline-block;}
+
+  .note-selector{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;}
+  .note-btn{font-family:'Space Mono',monospace;font-size:12px;padding:8px 14px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;transition:all 0.15s;}
+  .note-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .note-btn.active{background:var(--accent);border-color:var(--accent);color:#0d0d0f;font-weight:700;}
+  .octave-wrapper{overflow-x:auto;}
+  .octave-grid{display:flex;flex-direction:column;gap:6px;min-width:520px;}
+  .octave-row{display:grid;grid-template-columns:40px 44px repeat(12,1fr);align-items:center;}
+  .octave-str-name{font-family:'Space Mono',monospace;font-size:12px;color:var(--sc);font-weight:700;text-align:center;}
+  .octave-open{height:28px;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);border-right:1px solid var(--fc);}
+  .octave-open.highlight{color:var(--accent);font-weight:700;}
+  .octave-cell{height:28px;display:flex;align-items:center;justify-content:center;font-family:'Space Mono',monospace;font-size:9px;color:var(--muted);border-right:1px solid var(--fc);position:relative;}
+  .octave-cell.highlight{color:var(--accent);font-weight:700;font-size:11px;}
+  .octave-cell.highlight::after{content:'';position:absolute;inset:2px;background:rgba(232,255,71,0.15);border-radius:4px;border:1px solid rgba(232,255,71,0.4);}
+  .octave-cell span{position:relative;z-index:1;}
+</style>
+</head>
+<body>
+<header>
+  <h1>CHORD<span>FINDER</span></h1>
+  <p>Guitar · Interactive Fretboard Detector</p>
+</header>
+<div class="main-layout">
+
+  <div class="chord-display" id="chordDisplay">
+    <div class="chord-name empty" id="chordName">Tap frets or open strings to detect</div>
+    <div class="chord-type" id="chordType"></div>
+    <div class="notes-used" id="notesUsed"></div>
+  </div>
+
+  <div class="fretboard-wrapper">
+    <div class="fretboard-label">○ = open string &nbsp;|&nbsp; tap fret number to press</div>
+    <div class="fretboard" id="fretboard"></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn danger" onclick="clearAll()">✕ Clear</button>
+    <button class="btn" onclick="playChord()">▶ Play</button>
+  </div>
+
+  <div class="panel hidden" id="variationsPanel">
+    <div class="panel-title">Variasi posisi — <span id="varChordName"></span></div>
+    <div class="chord-grid" id="variationsGrid"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">↓ Browse chord — klik untuk load</div>
+    <div class="browser-tabs" id="browserTabs"></div>
+    <div class="chord-grid" id="chordGrid"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">↓ Posisi note di semua senar</div>
+    <div class="note-selector" id="noteSelector"></div>
+    <div class="octave-wrapper"><div class="octave-grid" id="octaveGrid"></div></div>
+  </div>
+
+</div>
+<script>
+// ── CONSTANTS ──────────────────────────────────────
+const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+// Standard tuning: index 0 = high e, index 5 = low E
+const OPEN_NOTES = [4,11,7,2,9,4]; // E(4) B(11) G(7) D(2) A(9) E(4)
+const STRING_NAMES = ['e','B','G','D','A','E'];
+const NUM_STRINGS = 6, NUM_FRETS = 12;
+
+function noteAt(s,f) { return (OPEN_NOTES[s]+f)%12; } // f=0 = open string
+function nn(i){ return NOTES[((i%12)+12)%12]; }
+
+// ── CHORD DETECTION ────────────────────────────────
+// Order: most-specific → least-specific. Power chord last & only for 2-note sets.
+const CHORD_TYPES = [
+  {s:'maj9',    l:'Major 9th',      iv:[0,4,7,11,2]},
+  {s:'m9',      l:'Minor 9th',      iv:[0,3,7,10,2]},
+  {s:'9',       l:'Dominant 9th',   iv:[0,4,7,10,2]},
+  {s:'maj7',    l:'Major 7th',      iv:[0,4,7,11]},
+  {s:'m7',      l:'Minor 7th',      iv:[0,3,7,10]},
+  {s:'7',       l:'Dominant 7th',   iv:[0,4,7,10]},
+  {s:'dim7',    l:'Diminished 7th', iv:[0,3,6,9]},
+  {s:'m7b5',    l:'Half-Diminished',iv:[0,3,6,10]},
+  {s:'augmaj7', l:'Aug Maj7',       iv:[0,4,8,11]},
+  {s:'aug7',    l:'Aug 7th',        iv:[0,4,8,10]},
+  {s:'6',       l:'Major 6th',      iv:[0,4,7,9]},
+  {s:'m6',      l:'Minor 6th',      iv:[0,3,7,9]},
+  {s:'add9',    l:'Add9',           iv:[0,2,4,7]},
+  {s:'',        l:'Major',          iv:[0,4,7]},
+  {s:'m',       l:'Minor',          iv:[0,3,7]},
+  {s:'dim',     l:'Diminished',     iv:[0,3,6]},
+  {s:'aug',     l:'Augmented',      iv:[0,4,8]},
+  {s:'sus2',    l:'Sus2',           iv:[0,2,7]},
+  {s:'sus4',    l:'Sus4',           iv:[0,5,7]},
+  {s:'5',       l:'Power Chord',    iv:[0,7]},
+];
+
+function detectChord(noteSet) {
+  if (noteSet.size < 2) return null;
+  for (const def of CHORD_TYPES) {
+    if (def.s==='5' && noteSet.size>=3) continue;
+    // Try every note IN the set as root — ensures root is always a played note
+    for (const root of noteSet) {
+      const expected = def.iv.map(i=>(root+i)%12);
+      if (expected.every(n=>noteSet.has(n))) {
+        return { root, rootName:NOTES[root], name:NOTES[root]+def.s, label:def.l };
+      }
+    }
+  }
+  return null;
+}
+
+// ── STATE ──────────────────────────────────────────
+// activeOpen[s] = true if open string s is active
+// activeFret[s] = fret number (1-12) if a fret on string s is pressed, else null
+const activeOpen = new Array(NUM_STRINGS).fill(false);
+const activeFret = new Array(NUM_STRINGS).fill(null);
+let lastDetected = null;
+
+function getActiveNoteSet() {
+  const ns = new Set();
+  for (let s=0;s<NUM_STRINGS;s++) {
+    if (activeOpen[s]) ns.add(noteAt(s,0));
+    if (activeFret[s] !== null) ns.add(noteAt(s, activeFret[s]));
+  }
+  return ns;
+}
+
+// ── BUILD FRETBOARD ────────────────────────────────
+function buildFretboard() {
+  const fb = document.getElementById('fretboard');
+
+  // Header row
+  let hdr = '<div class="fb-header"><div></div><div class="fret-num" style="font-size:9px;color:var(--accent);opacity:.7">OPEN</div>';
+  for (let f=1;f<=NUM_FRETS;f++) hdr+=`<div class="fret-num">${f}</div>`;
+  hdr+='</div>';
+  fb.innerHTML=hdr;
+
+  const area=document.createElement('div');
+  area.className='strings-area';
+  // Nut visual
+  const nut=document.createElement('div'); nut.className='nut-line'; area.appendChild(nut);
+
+  for (let s=0;s<NUM_STRINGS;s++) {
+    const row=document.createElement('div');
+    row.className='string-row'; row.dataset.str=s;
+
+    // String line behind everything
+    const sl=document.createElement('div'); sl.className='string-line'; row.appendChild(sl);
+
+    // String name label
+    const sn=document.createElement('div'); sn.className='string-name';
+    sn.textContent=STRING_NAMES[s]; row.appendChild(sn);
+
+    // Open string cell
+    const oc=document.createElement('div');
+    oc.className='open-cell'; oc.id=`open-${s}`;
+    const od=document.createElement('div');
+    od.className='open-dot'; od.textContent=nn(OPEN_NOTES[s]);
+    oc.appendChild(od);
+    oc.addEventListener('click',()=>toggleOpen(s));
+    row.appendChild(oc);
+
+    // Fret cells 1-12
+    for (let f=1;f<=NUM_FRETS;f++) {
+      const cell=document.createElement('div');
+      cell.className='fret-cell'; cell.id=`cell-${s}-${f}`;
+      const dot=document.createElement('div');
+      dot.className='dot'; dot.textContent=nn(noteAt(s,f));
+      cell.appendChild(dot);
+      cell.addEventListener('click',()=>toggleFret(s,f,cell));
+      row.appendChild(cell);
+    }
+    area.appendChild(row);
+  }
+
+  // Marker dots
+  const markers=[3,5,7,9,12];
+  let mr='<div class="fret-markers"><div></div><div></div>';
+  for (let f=1;f<=NUM_FRETS;f++)
+    mr+=`<div class="fret-marker-dot ${markers.includes(f)?'has-dot':''}"></div>`;
+  mr+='</div>';
+
+  fb.appendChild(area);
+  fb.insertAdjacentHTML('beforeend',mr);
+}
+
+function toggleOpen(s) {
+  // If a fret is pressed on this string, clear it first
+  if (activeFret[s]!==null) {
+    document.getElementById(`cell-${s}-${activeFret[s]}`)?.classList.remove('active');
+    activeFret[s]=null;
+  }
+  activeOpen[s]=!activeOpen[s];
+  document.getElementById(`open-${s}`).classList.toggle('active', activeOpen[s]);
+  detectAndDisplay();
+}
+
+function toggleFret(s,f,cell) {
+  // Clear open string on same string
+  if (activeOpen[s]) {
+    activeOpen[s]=false;
+    document.getElementById(`open-${s}`).classList.remove('active');
+  }
+  // Toggle fret (clear previous fret on same string first)
+  if (activeFret[s]===f) {
+    activeFret[s]=null; cell.classList.remove('active');
+  } else {
+    if (activeFret[s]!==null)
+      document.getElementById(`cell-${s}-${activeFret[s]}`)?.classList.remove('active');
+    activeFret[s]=f; cell.classList.add('active');
+  }
+  detectAndDisplay();
+}
+
+function clearAll() {
+  for (let s=0;s<NUM_STRINGS;s++) {
+    activeOpen[s]=false;
+    document.getElementById(`open-${s}`).classList.remove('active');
+    if (activeFret[s]!==null) {
+      document.getElementById(`cell-${s}-${activeFret[s]}`)?.classList.remove('active');
+      activeFret[s]=null;
+    }
+  }
+  document.querySelectorAll('.chord-card.active-card').forEach(c=>c.classList.remove('active-card'));
+  document.getElementById('variationsPanel').classList.add('hidden');
+  lastDetected=null; detectAndDisplay();
+}
+
+// ── DETECT & DISPLAY ───────────────────────────────
+function detectAndDisplay() {
+  const noteSet=getActiveNoteSet();
+  const display=document.getElementById('chordDisplay');
+  const nameEl=document.getElementById('chordName');
+  const typeEl=document.getElementById('chordType');
+  const notesEl=document.getElementById('notesUsed');
+  const varPanel=document.getElementById('variationsPanel');
+
+  if (noteSet.size===0) {
+    display.classList.remove('has-chord');
+    nameEl.className='chord-name empty';
+    nameEl.textContent='Tap frets or open strings to detect';
+    typeEl.textContent=''; notesEl.innerHTML='';
+    varPanel.classList.add('hidden'); lastDetected=null; return;
+  }
+
+  display.classList.add('has-chord');
+  nameEl.className='chord-name';
+
+  if (noteSet.size===1) {
+    const n=[...noteSet][0];
+    nameEl.textContent=nn(n); typeEl.textContent='Single Note';
+    notesEl.innerHTML=`<span class="note-pill root">${nn(n)}</span>`;
+    varPanel.classList.add('hidden'); lastDetected=null; return;
+  }
+
+  const chord=detectChord(noteSet);
+  notesEl.innerHTML=[...noteSet].sort((a,b)=>a-b)
+    .map(n=>`<span class="note-pill ${chord&&n===chord.root?'root':''}">${nn(n)}</span>`).join('');
+
+  if (chord) {
+    nameEl.textContent=chord.name; typeEl.textContent=chord.label;
+    lastDetected=chord; showVariations(chord.name);
+  } else {
+    nameEl.textContent=[...noteSet].sort((a,b)=>a-b).map(n=>nn(n)).join(' – ');
+    typeEl.textContent='Unknown voicing';
+    varPanel.classList.add('hidden'); lastDetected=null;
+  }
+}
+
+// ── VARIATIONS ─────────────────────────────────────
+function showVariations(chordName) {
+  const panel=document.getElementById('variationsPanel');
+  const grid=document.getElementById('variationsGrid');
+  document.getElementById('varChordName').textContent=chordName;
+  const voicings=CHORD_DB[chordName];
+  if (!voicings||!voicings.length) {
+    panel.classList.remove('hidden');
+    grid.innerHTML=`<p style="color:var(--muted);font-family:'Space Mono',monospace;font-size:11px;">Belum ada voicing untuk ${chordName}</p>`;
+    return;
+  }
+  grid.innerHTML='';
+  voicings.forEach(v=>{
+    const card=document.createElement('div');
+    card.className='chord-card';
+    card.innerHTML=`<div class="cc-name">${chordName}</div><div class="cc-pos">${v.pos}</div><div class="mini-diagram">${renderDiagram(v.frets,v.barre)}</div>`;
+    card.addEventListener('click',()=>{
+      loadFrets(v.frets);
+      grid.querySelectorAll('.chord-card').forEach(c=>c.classList.remove('active-card'));
+      card.classList.add('active-card');
+    });
+    grid.appendChild(card);
+  });
+  panel.classList.remove('hidden');
+}
+
+// ── LOAD FRETS ─────────────────────────────────────
+// frets[s]: -1=muted, 0=open, 1-17=fret number, string index 0=high e
+function loadFrets(frets) {
+  clearAll();
+  frets.forEach((f,s)=>{
+    if (f===0) {
+      activeOpen[s]=true;
+      document.getElementById(`open-${s}`).classList.add('active');
+    } else if (f>0 && f<=NUM_FRETS) {
+      activeFret[s]=f;
+      document.getElementById(`cell-${s}-${f}`)?.classList.add('active');
+    }
+    // f>12 or f===-1: skip (muted or out of display range)
+  });
+  detectAndDisplay();
+  playChord();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── MINI DIAGRAM SVG ───────────────────────────────
+function renderDiagram(frets, barre) {
+  const played=frets.filter(f=>f>0);
+  if (!played.length && !frets.some(f=>f===0)) return '';
+  const minFret=played.length?Math.min(...played):1;
+  const maxFret=played.length?Math.max(...played):1;
+  const startFret=minFret<=1?1:minFret;
+  const numRows=Math.max(4,maxFret-startFret+1);
+  const W=70,padL=10,padR=18,padT=18,padB=6;
+  const H=padT+numRows*14+padB;
+  const sg=(W-padL-padR)/5;
+  let svg=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  // Nut / fret marker
+  if (startFret===1) svg+=`<line x1="${padL}" y1="${padT}" x2="${W-padR}" y2="${padT}" stroke="#c8a96e" stroke-width="3"/>`;
+  else {
+    svg+=`<line x1="${padL}" y1="${padT}" x2="${W-padR}" y2="${padT}" stroke="#3a3a48" stroke-width="1"/>`;
+    svg+=`<text x="${W-padR+2}" y="${padT+8}" font-size="7" fill="#6b6b80" font-family="monospace">${startFret}fr</text>`;
+  }
+  for (let r=1;r<=numRows;r++) { const y=padT+r*14; svg+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#3a3a48" stroke-width="1"/>`; }
+  for (let si=0;si<6;si++) { const x=padL+si*sg; svg+=`<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT+numRows*14}" stroke="#c8a96e" stroke-width="${1+si*0.25}"/>`; }
+  if (barre) {
+    const by=padT+(barre.fret-startFret+0.5)*14;
+    svg+=`<line x1="${padL+barre.from*sg}" y1="${by}" x2="${padL+barre.to*sg}" y2="${by}" stroke="#e8ff47" stroke-width="8" stroke-linecap="round" opacity="0.45"/>`;
+  }
+  frets.forEach((f,si)=>{
+    const x=padL+si*sg;
+    if (f===-1) svg+=`<text x="${x}" y="${padT-4}" font-size="9" fill="#6b6b80" text-anchor="middle">×</text>`;
+    else if (f===0) svg+=`<circle cx="${x}" cy="${padT-7}" r="4" fill="none" stroke="#6b6b80" stroke-width="1.5"/>`;
+    else {
+      const rel=f-startFret+1;
+      if (rel>=1&&rel<=numRows) {
+        const y=padT+(rel-0.5)*14;
+        const isBarre=barre&&f===barre.fret&&si>=barre.from&&si<=barre.to;
+        svg+=isBarre
+          ?`<circle cx="${x}" cy="${y}" r="4" fill="#0d0d0f"/>`
+          :`<circle cx="${x}" cy="${y}" r="5.5" fill="#e8ff47"/>`;
+      }
+    }
+  });
+  return svg+'</svg>';
+}
+
+// ── AUDIO ──────────────────────────────────────────
+let aCtx=null;
+function gACtx(){if(!aCtx)aCtx=new(window.AudioContext||window.webkitAudioContext)();return aCtx;}
+function playNote(freq,when,dur){
+  const ctx=gACtx(),osc=ctx.createOscillator(),g=ctx.createGain();
+  osc.connect(g);g.connect(ctx.destination);
+  osc.type='triangle';osc.frequency.value=freq;
+  g.gain.setValueAtTime(0.25,when);g.gain.exponentialRampToValueAtTime(0.001,when+dur);
+  osc.start(when);osc.stop(when+dur);
+}
+// Open string frequencies: [e, B, G, D, A, E] (string 0→5)
+const SFREQ=[329.63,246.94,196.00,146.83,110.00,82.41];
+function playChord(){
+  const ctx=gACtx(),now=ctx.currentTime;let i=0;
+  for (let s=5;s>=0;s--) {
+    let freq=null;
+    if (activeOpen[s]) freq=SFREQ[s];
+    else if (activeFret[s]!==null) freq=SFREQ[s]*Math.pow(2,activeFret[s]/12);
+    if (freq!==null){playNote(freq,now+i*0.07,1.8);i++;}
+  }
+}
+
+// ── CHORD DATABASE ─────────────────────────────────
+// frets[s]: -1=mute, 0=open, 1+= fret. s=0 is high e, s=5 is low E.
+const CHORD_DB={"C7":[{"pos":"III (A)","frets":[3,5,3,5,3,-1],"barre":{"fret":3,"from":1,"to":4}},{"pos":"VIII (E)","frets":[8,8,9,8,10,8],"barre":{"fret":8,"from":0,"to":5}},{"pos":"X (D)","frets":[12,11,12,10,-1,-1],"barre":null}],"C":[{"pos":"Open","frets":[0,1,0,2,3,-1],"barre":null},{"pos":"III (A)","frets":[3,5,5,5,3,-1],"barre":{"fret":3,"from":1,"to":4}},{"pos":"VIII (E)","frets":[8,8,9,10,10,8],"barre":{"fret":8,"from":0,"to":5}},{"pos":"X (D)","frets":[12,10,12,10,-1,-1],"barre":null}],"Cm":[{"pos":"III (A)","frets":[3,4,5,5,3,-1],"barre":{"fret":3,"from":1,"to":4}},{"pos":"VIII (E)","frets":[8,8,8,10,10,8],"barre":{"fret":8,"from":0,"to":5}},{"pos":"X (D)","frets":[11,10,12,10,-1,-1],"barre":null}],"Cm7":[{"pos":"III (A)","frets":[3,4,3,5,3,-1],"barre":{"fret":3,"from":1,"to":4}},{"pos":"VIII (E)","frets":[8,8,8,8,10,8],"barre":{"fret":8,"from":0,"to":5}},{"pos":"X (D)","frets":[11,11,12,10,-1,-1],"barre":null}],"Cmaj7":[{"pos":"Open","frets":[0,0,0,2,3,-1],"barre":null},{"pos":"III (A)","frets":[3,5,4,5,3,-1],"barre":{"fret":3,"from":1,"to":4}},{"pos":"VIII (E)","frets":[8,8,9,9,10,8],"barre":{"fret":8,"from":0,"to":5}},{"pos":"X (D)","frets":[12,12,12,10,-1,-1],"barre":null}],"Csus2":[{"pos":"Open","frets":[3,3,0,2,3,-1],"barre":null},{"pos":"VIII (E)","frets":[10,8,8,10,10,8],"barre":{"fret":8,"from":0,"to":5}},{"pos":"X (D)","frets":[10,10,12,10,-1,-1],"barre":null}],"Csus4":[{"pos":"Open","frets":[1,1,0,2,3,-1],"barre":null},{"pos":"VIII (E)","frets":[8,8,10,10,10,8],"barre":{"fret":8,"from":0,"to":5}},{"pos":"X (D)","frets":[13,10,12,10,-1,-1],"barre":null}],"C#7":[{"pos":"IV (A)","frets":[4,6,4,6,4,-1],"barre":{"fret":4,"from":1,"to":4}},{"pos":"IX (E)","frets":[9,9,10,9,11,9],"barre":{"fret":9,"from":0,"to":5}},{"pos":"XI (D)","frets":[13,12,13,11,-1,-1],"barre":null}],"C#":[{"pos":"IV (A)","frets":[4,6,6,6,4,-1],"barre":{"fret":4,"from":1,"to":4}},{"pos":"IX (E)","frets":[9,9,10,11,11,9],"barre":{"fret":9,"from":0,"to":5}},{"pos":"XI (D)","frets":[13,11,13,11,-1,-1],"barre":null}],"C#m":[{"pos":"IV (A)","frets":[4,5,6,6,4,-1],"barre":{"fret":4,"from":1,"to":4}},{"pos":"IX (E)","frets":[9,9,9,11,11,9],"barre":{"fret":9,"from":0,"to":5}},{"pos":"XI (D)","frets":[12,11,13,11,-1,-1],"barre":null}],"C#m7":[{"pos":"IV (A)","frets":[4,5,4,6,4,-1],"barre":{"fret":4,"from":1,"to":4}},{"pos":"IX (E)","frets":[9,9,9,9,11,9],"barre":{"fret":9,"from":0,"to":5}},{"pos":"XI (D)","frets":[12,12,13,11,-1,-1],"barre":null}],"C#maj7":[{"pos":"IV (A)","frets":[4,6,5,6,4,-1],"barre":{"fret":4,"from":1,"to":4}},{"pos":"IX (E)","frets":[9,9,10,10,11,9],"barre":{"fret":9,"from":0,"to":5}},{"pos":"XI (D)","frets":[13,13,13,11,-1,-1],"barre":null}],"C#sus2":[{"pos":"IX (E)","frets":[11,9,9,11,11,9],"barre":{"fret":9,"from":0,"to":5}},{"pos":"XI (D)","frets":[11,11,13,11,-1,-1],"barre":null}],"C#sus4":[{"pos":"IX (E)","frets":[9,9,11,11,11,9],"barre":{"fret":9,"from":0,"to":5}},{"pos":"XI (D)","frets":[14,11,13,11,-1,-1],"barre":null}],"D7":[{"pos":"Open","frets":[2,1,2,0,0,-1],"barre":null},{"pos":"V (A)","frets":[5,7,5,7,5,-1],"barre":{"fret":5,"from":1,"to":4}},{"pos":"X (E)","frets":[10,10,11,10,12,10],"barre":{"fret":10,"from":0,"to":5}},{"pos":"XII (D)","frets":[14,13,14,12,-1,-1],"barre":null}],"D":[{"pos":"Open","frets":[2,3,2,0,0,-1],"barre":null},{"pos":"V (A)","frets":[5,7,7,7,5,-1],"barre":{"fret":5,"from":1,"to":4}},{"pos":"X (E)","frets":[10,10,11,12,12,10],"barre":{"fret":10,"from":0,"to":5}},{"pos":"XII (D)","frets":[14,12,14,12,-1,-1],"barre":null}],"Dm":[{"pos":"Open","frets":[1,3,2,0,0,-1],"barre":null},{"pos":"V (A)","frets":[5,6,7,7,5,-1],"barre":{"fret":5,"from":1,"to":4}},{"pos":"X (E)","frets":[10,10,10,12,12,10],"barre":{"fret":10,"from":0,"to":5}},{"pos":"XII (D)","frets":[13,12,14,12,-1,-1],"barre":null}],"Dm7":[{"pos":"Open","frets":[1,1,2,0,0,-1],"barre":null},{"pos":"V (A)","frets":[5,6,5,7,5,-1],"barre":{"fret":5,"from":1,"to":4}},{"pos":"X (E)","frets":[10,10,10,10,12,10],"barre":{"fret":10,"from":0,"to":5}},{"pos":"XII (D)","frets":[13,13,14,12,-1,-1],"barre":null}],"Dmaj7":[{"pos":"Open","frets":[2,2,2,0,0,-1],"barre":null},{"pos":"V (A)","frets":[5,7,6,7,5,-1],"barre":{"fret":5,"from":1,"to":4}},{"pos":"X (E)","frets":[10,10,11,11,12,10],"barre":{"fret":10,"from":0,"to":5}},{"pos":"XII (D)","frets":[14,14,14,12,-1,-1],"barre":null}],"Dsus2":[{"pos":"Open","frets":[0,3,2,0,0,-1],"barre":null},{"pos":"X (E)","frets":[12,10,10,12,12,10],"barre":{"fret":10,"from":0,"to":5}},{"pos":"XII (D)","frets":[12,12,14,12,-1,-1],"barre":null}],"Dsus4":[{"pos":"Open","frets":[3,3,2,0,0,-1],"barre":null},{"pos":"X (E)","frets":[10,10,12,12,12,10],"barre":{"fret":10,"from":0,"to":5}},{"pos":"XII (D)","frets":[15,12,14,12,-1,-1],"barre":null}],"D#7":[{"pos":"VI (A)","frets":[6,8,6,8,6,-1],"barre":{"fret":6,"from":1,"to":4}},{"pos":"XI (E)","frets":[11,11,12,11,13,11],"barre":{"fret":11,"from":0,"to":5}}],"D#":[{"pos":"VI (A)","frets":[6,8,8,8,6,-1],"barre":{"fret":6,"from":1,"to":4}},{"pos":"XI (E)","frets":[11,11,12,13,13,11],"barre":{"fret":11,"from":0,"to":5}}],"D#m":[{"pos":"VI (A)","frets":[6,7,8,8,6,-1],"barre":{"fret":6,"from":1,"to":4}},{"pos":"XI (E)","frets":[11,11,11,13,13,11],"barre":{"fret":11,"from":0,"to":5}}],"D#m7":[{"pos":"VI (A)","frets":[6,7,6,8,6,-1],"barre":{"fret":6,"from":1,"to":4}},{"pos":"XI (E)","frets":[11,11,11,11,13,11],"barre":{"fret":11,"from":0,"to":5}}],"D#maj7":[{"pos":"VI (A)","frets":[6,8,7,8,6,-1],"barre":{"fret":6,"from":1,"to":4}},{"pos":"XI (E)","frets":[11,11,12,12,13,11],"barre":{"fret":11,"from":0,"to":5}}],"D#sus2":[{"pos":"XI (E)","frets":[13,11,11,13,13,11],"barre":{"fret":11,"from":0,"to":5}}],"D#sus4":[{"pos":"XI (E)","frets":[11,11,13,13,13,11],"barre":{"fret":11,"from":0,"to":5}}],"E7":[{"pos":"Open","frets":[0,0,1,0,2,0],"barre":null},{"pos":"II (D)","frets":[4,3,4,2,-1,-1],"barre":null},{"pos":"VII (A)","frets":[7,9,7,9,7,-1],"barre":{"fret":7,"from":1,"to":4}},{"pos":"XII (E)","frets":[12,12,13,12,14,12],"barre":{"fret":12,"from":0,"to":5}}],"E":[{"pos":"Open","frets":[0,0,1,2,2,0],"barre":null},{"pos":"II (D)","frets":[4,2,4,2,-1,-1],"barre":null},{"pos":"VII (A)","frets":[7,9,9,9,7,-1],"barre":{"fret":7,"from":1,"to":4}},{"pos":"XII (E)","frets":[12,12,13,14,14,12],"barre":{"fret":12,"from":0,"to":5}}],"Em":[{"pos":"Open","frets":[0,0,0,2,2,0],"barre":null},{"pos":"II (D)","frets":[3,2,4,2,-1,-1],"barre":null},{"pos":"VII (A)","frets":[7,8,9,9,7,-1],"barre":{"fret":7,"from":1,"to":4}},{"pos":"XII (E)","frets":[12,12,12,14,14,12],"barre":{"fret":12,"from":0,"to":5}}],"Em7":[{"pos":"Open","frets":[0,0,0,0,2,0],"barre":null},{"pos":"II (D)","frets":[3,3,4,2,-1,-1],"barre":null},{"pos":"VII (A)","frets":[7,8,7,9,7,-1],"barre":{"fret":7,"from":1,"to":4}},{"pos":"XII (E)","frets":[12,12,12,12,14,12],"barre":{"fret":12,"from":0,"to":5}}],"Emaj7":[{"pos":"Open","frets":[0,0,1,1,2,0],"barre":null},{"pos":"II (D)","frets":[4,4,4,2,-1,-1],"barre":null},{"pos":"VII (A)","frets":[7,9,8,9,7,-1],"barre":{"fret":7,"from":1,"to":4}},{"pos":"XII (E)","frets":[12,12,13,13,14,12],"barre":{"fret":12,"from":0,"to":5}}],"Esus2":[{"pos":"II (D)","frets":[2,2,4,2,-1,-1],"barre":null},{"pos":"XII (E)","frets":[14,12,12,14,14,12],"barre":{"fret":12,"from":0,"to":5}}],"Esus4":[{"pos":"Open","frets":[0,0,2,2,2,0],"barre":null},{"pos":"II (D)","frets":[5,2,4,2,-1,-1],"barre":null},{"pos":"XII (E)","frets":[12,12,14,14,14,12],"barre":{"fret":12,"from":0,"to":5}}],"F7":[{"pos":"I (E)","frets":[1,1,2,1,3,1],"barre":{"fret":1,"from":0,"to":5}},{"pos":"III (D)","frets":[5,4,5,3,-1,-1],"barre":null},{"pos":"VIII (A)","frets":[8,10,8,10,8,-1],"barre":{"fret":8,"from":1,"to":4}},{"pos":"XIII (E)","frets":[13,13,14,13,15,13],"barre":{"fret":13,"from":0,"to":5}}],"F":[{"pos":"I (E)","frets":[1,1,2,3,3,1],"barre":{"fret":1,"from":0,"to":5}},{"pos":"III (D)","frets":[5,3,5,3,-1,-1],"barre":null},{"pos":"VIII (A)","frets":[8,10,10,10,8,-1],"barre":{"fret":8,"from":1,"to":4}},{"pos":"XIII (E)","frets":[13,13,14,15,15,13],"barre":{"fret":13,"from":0,"to":5}}],"Fm":[{"pos":"I (E)","frets":[1,1,1,3,3,1],"barre":{"fret":1,"from":0,"to":5}},{"pos":"III (D)","frets":[4,3,5,3,-1,-1],"barre":null},{"pos":"VIII (A)","frets":[8,9,10,10,8,-1],"barre":{"fret":8,"from":1,"to":4}},{"pos":"XIII (E)","frets":[13,13,13,15,15,13],"barre":{"fret":13,"from":0,"to":5}}],"Fm7":[{"pos":"I (E)","frets":[1,1,1,1,3,1],"barre":{"fret":1,"from":0,"to":5}},{"pos":"III (D)","frets":[4,4,5,3,-1,-1],"barre":null},{"pos":"VIII (A)","frets":[8,9,8,10,8,-1],"barre":{"fret":8,"from":1,"to":4}},{"pos":"XIII (E)","frets":[13,13,13,13,15,13],"barre":{"fret":13,"from":0,"to":5}}],"Fmaj7":[{"pos":"I (E)","frets":[1,1,2,2,3,1],"barre":{"fret":1,"from":0,"to":5}},{"pos":"III (D)","frets":[5,5,5,3,-1,-1],"barre":null},{"pos":"VIII (A)","frets":[8,10,9,10,8,-1],"barre":{"fret":8,"from":1,"to":4}},{"pos":"XIII (E)","frets":[13,13,14,14,15,13],"barre":{"fret":13,"from":0,"to":5}}],"Fsus2":[{"pos":"I (E)","frets":[3,1,1,3,3,1],"barre":{"fret":1,"from":0,"to":5}},{"pos":"III (D)","frets":[3,3,5,3,-1,-1],"barre":null},{"pos":"XIII (E)","frets":[15,13,13,15,15,13],"barre":{"fret":13,"from":0,"to":5}}],"Fsus4":[{"pos":"I (E)","frets":[1,1,3,3,3,1],"barre":{"fret":1,"from":0,"to":5}},{"pos":"III (D)","frets":[6,3,5,3,-1,-1],"barre":null},{"pos":"XIII (E)","frets":[13,13,15,15,15,13],"barre":{"fret":13,"from":0,"to":5}}],"F#7":[{"pos":"II (E)","frets":[2,2,3,2,4,2],"barre":{"fret":2,"from":0,"to":5}},{"pos":"IV (D)","frets":[6,5,6,4,-1,-1],"barre":null},{"pos":"IX (A)","frets":[9,11,9,11,9,-1],"barre":{"fret":9,"from":1,"to":4}}],"F#":[{"pos":"II (E)","frets":[2,2,3,4,4,2],"barre":{"fret":2,"from":0,"to":5}},{"pos":"IV (D)","frets":[6,4,6,4,-1,-1],"barre":null},{"pos":"IX (A)","frets":[9,11,11,11,9,-1],"barre":{"fret":9,"from":1,"to":4}}],"F#m":[{"pos":"II (E)","frets":[2,2,2,4,4,2],"barre":{"fret":2,"from":0,"to":5}},{"pos":"IV (D)","frets":[5,4,6,4,-1,-1],"barre":null},{"pos":"IX (A)","frets":[9,10,11,11,9,-1],"barre":{"fret":9,"from":1,"to":4}}],"F#m7":[{"pos":"II (E)","frets":[2,2,2,2,4,2],"barre":{"fret":2,"from":0,"to":5}},{"pos":"IV (D)","frets":[5,5,6,4,-1,-1],"barre":null},{"pos":"IX (A)","frets":[9,10,9,11,9,-1],"barre":{"fret":9,"from":1,"to":4}}],"F#maj7":[{"pos":"II (E)","frets":[2,2,3,3,4,2],"barre":{"fret":2,"from":0,"to":5}},{"pos":"IV (D)","frets":[6,6,6,4,-1,-1],"barre":null},{"pos":"IX (A)","frets":[9,11,10,11,9,-1],"barre":{"fret":9,"from":1,"to":4}}],"F#sus2":[{"pos":"II (E)","frets":[4,2,2,4,4,2],"barre":{"fret":2,"from":0,"to":5}},{"pos":"IV (D)","frets":[4,4,6,4,-1,-1],"barre":null}],"F#sus4":[{"pos":"II (E)","frets":[2,2,4,4,4,2],"barre":{"fret":2,"from":0,"to":5}},{"pos":"IV (D)","frets":[7,4,6,4,-1,-1],"barre":null}],"G7":[{"pos":"Open","frets":[1,0,0,0,2,3],"barre":null},{"pos":"III (E)","frets":[3,3,4,3,5,3],"barre":{"fret":3,"from":0,"to":5}},{"pos":"V (D)","frets":[7,6,7,5,-1,-1],"barre":null},{"pos":"X (A)","frets":[10,12,10,12,10,-1],"barre":{"fret":10,"from":1,"to":4}}],"G":[{"pos":"Open","frets":[3,0,0,0,2,3],"barre":null},{"pos":"III (E)","frets":[3,3,4,5,5,3],"barre":{"fret":3,"from":0,"to":5}},{"pos":"V (D)","frets":[7,5,7,5,-1,-1],"barre":null},{"pos":"X (A)","frets":[10,12,12,12,10,-1],"barre":{"fret":10,"from":1,"to":4}}],"Gm":[{"pos":"III (E)","frets":[3,3,3,5,5,3],"barre":{"fret":3,"from":0,"to":5}},{"pos":"V (D)","frets":[6,5,7,5,-1,-1],"barre":null},{"pos":"X (A)","frets":[10,11,12,12,10,-1],"barre":{"fret":10,"from":1,"to":4}}],"Gm7":[{"pos":"III (E)","frets":[3,3,3,3,5,3],"barre":{"fret":3,"from":0,"to":5}},{"pos":"V (D)","frets":[6,6,7,5,-1,-1],"barre":null},{"pos":"X (A)","frets":[10,11,10,12,10,-1],"barre":{"fret":10,"from":1,"to":4}}],"Gmaj7":[{"pos":"Open","frets":[2,0,0,0,2,3],"barre":null},{"pos":"III (E)","frets":[3,3,4,4,5,3],"barre":{"fret":3,"from":0,"to":5}},{"pos":"V (D)","frets":[7,7,7,5,-1,-1],"barre":null},{"pos":"X (A)","frets":[10,12,11,12,10,-1],"barre":{"fret":10,"from":1,"to":4}}],"Gsus2":[{"pos":"Open","frets":[3,0,0,0,0,3],"barre":null},{"pos":"III (E)","frets":[5,3,3,5,5,3],"barre":{"fret":3,"from":0,"to":5}},{"pos":"V (D)","frets":[5,5,7,5,-1,-1],"barre":null}],"Gsus4":[{"pos":"Open","frets":[3,0,0,0,3,3],"barre":null},{"pos":"III (E)","frets":[3,3,5,5,5,3],"barre":{"fret":3,"from":0,"to":5}},{"pos":"V (D)","frets":[8,5,7,5,-1,-1],"barre":null}],"G#7":[{"pos":"IV (E)","frets":[4,4,5,4,6,4],"barre":{"fret":4,"from":0,"to":5}},{"pos":"VI (D)","frets":[8,7,8,6,-1,-1],"barre":null},{"pos":"XI (A)","frets":[11,13,11,13,11,-1],"barre":{"fret":11,"from":1,"to":4}}],"G#":[{"pos":"IV (E)","frets":[4,4,5,6,6,4],"barre":{"fret":4,"from":0,"to":5}},{"pos":"VI (D)","frets":[8,6,8,6,-1,-1],"barre":null},{"pos":"XI (A)","frets":[11,13,13,13,11,-1],"barre":{"fret":11,"from":1,"to":4}}],"G#m":[{"pos":"IV (E)","frets":[4,4,4,6,6,4],"barre":{"fret":4,"from":0,"to":5}},{"pos":"VI (D)","frets":[7,6,8,6,-1,-1],"barre":null},{"pos":"XI (A)","frets":[11,12,13,13,11,-1],"barre":{"fret":11,"from":1,"to":4}}],"G#m7":[{"pos":"IV (E)","frets":[4,4,4,4,6,4],"barre":{"fret":4,"from":0,"to":5}},{"pos":"VI (D)","frets":[7,7,8,6,-1,-1],"barre":null},{"pos":"XI (A)","frets":[11,12,11,13,11,-1],"barre":{"fret":11,"from":1,"to":4}}],"G#maj7":[{"pos":"IV (E)","frets":[4,4,5,5,6,4],"barre":{"fret":4,"from":0,"to":5}},{"pos":"VI (D)","frets":[8,8,8,6,-1,-1],"barre":null},{"pos":"XI (A)","frets":[11,13,12,13,11,-1],"barre":{"fret":11,"from":1,"to":4}}],"G#sus2":[{"pos":"IV (E)","frets":[6,4,4,6,6,4],"barre":{"fret":4,"from":0,"to":5}},{"pos":"VI (D)","frets":[6,6,8,6,-1,-1],"barre":null}],"G#sus4":[{"pos":"IV (E)","frets":[4,4,6,6,6,4],"barre":{"fret":4,"from":0,"to":5}},{"pos":"VI (D)","frets":[9,6,8,6,-1,-1],"barre":null}],"A7":[{"pos":"Open","frets":[0,2,0,2,0,0],"barre":null},{"pos":"V (E)","frets":[5,5,6,5,7,5],"barre":{"fret":5,"from":0,"to":5}},{"pos":"VII (D)","frets":[9,8,9,7,-1,-1],"barre":null},{"pos":"XII (A)","frets":[12,14,12,14,12,-1],"barre":{"fret":12,"from":1,"to":4}}],"A":[{"pos":"Open","frets":[0,2,2,2,0,0],"barre":null},{"pos":"V (E)","frets":[5,5,6,7,7,5],"barre":{"fret":5,"from":0,"to":5}},{"pos":"VII (D)","frets":[9,7,9,7,-1,-1],"barre":null},{"pos":"XII (A)","frets":[12,14,14,14,12,-1],"barre":{"fret":12,"from":1,"to":4}}],"Am":[{"pos":"Open","frets":[0,1,2,2,0,0],"barre":null},{"pos":"V (E)","frets":[5,5,5,7,7,5],"barre":{"fret":5,"from":0,"to":5}},{"pos":"VII (D)","frets":[8,7,9,7,-1,-1],"barre":null},{"pos":"XII (A)","frets":[12,13,14,14,12,-1],"barre":{"fret":12,"from":1,"to":4}}],"Am7":[{"pos":"Open","frets":[0,1,0,2,0,0],"barre":null},{"pos":"V (E)","frets":[5,5,5,5,7,5],"barre":{"fret":5,"from":0,"to":5}},{"pos":"VII (D)","frets":[8,8,9,7,-1,-1],"barre":null},{"pos":"XII (A)","frets":[12,13,12,14,12,-1],"barre":{"fret":12,"from":1,"to":4}}],"Amaj7":[{"pos":"Open","frets":[0,2,1,2,0,0],"barre":null},{"pos":"V (E)","frets":[5,5,6,6,7,5],"barre":{"fret":5,"from":0,"to":5}},{"pos":"VII (D)","frets":[9,9,9,7,-1,-1],"barre":null},{"pos":"XII (A)","frets":[12,14,13,14,12,-1],"barre":{"fret":12,"from":1,"to":4}}],"Asus2":[{"pos":"Open","frets":[0,0,2,2,0,0],"barre":null},{"pos":"V (E)","frets":[7,5,5,7,7,5],"barre":{"fret":5,"from":0,"to":5}},{"pos":"VII (D)","frets":[7,7,9,7,-1,-1],"barre":null}],"Asus4":[{"pos":"V (E)","frets":[5,5,7,7,7,5],"barre":{"fret":5,"from":0,"to":5}},{"pos":"VII (D)","frets":[10,7,9,7,-1,-1],"barre":null}],"A#7":[{"pos":"I (A)","frets":[1,3,1,3,1,-1],"barre":{"fret":1,"from":1,"to":4}},{"pos":"VI (E)","frets":[6,6,7,6,8,6],"barre":{"fret":6,"from":0,"to":5}},{"pos":"VIII (D)","frets":[10,9,10,8,-1,-1],"barre":null}],"A#":[{"pos":"I (A)","frets":[1,3,3,3,1,-1],"barre":{"fret":1,"from":1,"to":4}},{"pos":"VI (E)","frets":[6,6,7,8,8,6],"barre":{"fret":6,"from":0,"to":5}},{"pos":"VIII (D)","frets":[10,8,10,8,-1,-1],"barre":null}],"A#m":[{"pos":"I (A)","frets":[1,2,3,3,1,-1],"barre":{"fret":1,"from":1,"to":4}},{"pos":"VI (E)","frets":[6,6,6,8,8,6],"barre":{"fret":6,"from":0,"to":5}},{"pos":"VIII (D)","frets":[9,8,10,8,-1,-1],"barre":null}],"A#m7":[{"pos":"I (A)","frets":[1,2,1,3,1,-1],"barre":{"fret":1,"from":1,"to":4}},{"pos":"VI (E)","frets":[6,6,6,6,8,6],"barre":{"fret":6,"from":0,"to":5}},{"pos":"VIII (D)","frets":[9,9,10,8,-1,-1],"barre":null}],"A#maj7":[{"pos":"I (A)","frets":[1,3,2,3,1,-1],"barre":{"fret":1,"from":1,"to":4}},{"pos":"VI (E)","frets":[6,6,7,7,8,6],"barre":{"fret":6,"from":0,"to":5}},{"pos":"VIII (D)","frets":[10,10,10,8,-1,-1],"barre":null}],"A#sus2":[{"pos":"VI (E)","frets":[8,6,6,8,8,6],"barre":{"fret":6,"from":0,"to":5}},{"pos":"VIII (D)","frets":[8,8,10,8,-1,-1],"barre":null}],"A#sus4":[{"pos":"VI (E)","frets":[6,6,8,8,8,6],"barre":{"fret":6,"from":0,"to":5}},{"pos":"VIII (D)","frets":[11,8,10,8,-1,-1],"barre":null}],"B7":[{"pos":"II (A)","frets":[2,4,2,4,2,-1],"barre":{"fret":2,"from":1,"to":4}},{"pos":"VII (E)","frets":[7,7,8,7,9,7],"barre":{"fret":7,"from":0,"to":5}},{"pos":"IX (D)","frets":[11,10,11,9,-1,-1],"barre":null}],"B":[{"pos":"II (A)","frets":[2,4,4,4,2,-1],"barre":{"fret":2,"from":1,"to":4}},{"pos":"VII (E)","frets":[7,7,8,9,9,7],"barre":{"fret":7,"from":0,"to":5}},{"pos":"IX (D)","frets":[11,9,11,9,-1,-1],"barre":null}],"Bm":[{"pos":"Open","frets":[2,3,4,4,2,-1],"barre":null},{"pos":"VII (E)","frets":[7,7,7,9,9,7],"barre":{"fret":7,"from":0,"to":5}},{"pos":"IX (D)","frets":[10,9,11,9,-1,-1],"barre":null}],"Bm7":[{"pos":"II (A)","frets":[2,3,2,4,2,-1],"barre":{"fret":2,"from":1,"to":4}},{"pos":"VII (E)","frets":[7,7,7,7,9,7],"barre":{"fret":7,"from":0,"to":5}},{"pos":"IX (D)","frets":[10,10,11,9,-1,-1],"barre":null}],"Bmaj7":[{"pos":"II (A)","frets":[2,4,3,4,2,-1],"barre":{"fret":2,"from":1,"to":4}},{"pos":"VII (E)","frets":[7,7,8,8,9,7],"barre":{"fret":7,"from":0,"to":5}},{"pos":"IX (D)","frets":[11,11,11,9,-1,-1],"barre":null}],"Bsus2":[{"pos":"VII (E)","frets":[9,7,7,9,9,7],"barre":{"fret":7,"from":0,"to":5}},{"pos":"IX (D)","frets":[9,9,11,9,-1,-1],"barre":null}],"Bsus4":[{"pos":"VII (E)","frets":[7,7,9,9,9,7],"barre":{"fret":7,"from":0,"to":5}},{"pos":"IX (D)","frets":[12,9,11,9,-1,-1],"barre":null}]};
+
+const CHORD_GROUPS={
+  'Major': ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'],
+  'Minor': ['Cm','C#m','Dm','D#m','Em','Fm','F#m','Gm','G#m','Am','A#m','Bm'],
+  '7th':   ['C7','C#7','D7','E7','F7','F#7','G7','G#7','A7','A#7','B7'],
+  'Maj7':  ['Cmaj7','Dmaj7','Emaj7','Fmaj7','Gmaj7','Amaj7','Bmaj7'],
+  'Min7':  ['Cm7','Dm7','Em7','Fm7','F#m7','Gm7','Am7','Bm7'],
+  'Sus':   ['Csus2','Dsus2','Esus2','Gsus2','Asus2','Csus4','Dsus4','Esus4','Gsus4','Asus4'],
+};
+
+// ── CHORD BROWSER ──────────────────────────────────
+let currentGroup='Major';
+function buildChordBrowser(){
+  const tabs=document.getElementById('browserTabs');
+  Object.keys(CHORD_GROUPS).forEach(g=>{
+    const btn=document.createElement('button');
+    btn.className='tab-btn'+(g===currentGroup?' active':'');
+    btn.textContent=g;
+    btn.addEventListener('click',()=>{
+      currentGroup=g;
+      document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active'); renderChordGrid();
+    });
+    tabs.appendChild(btn);
+  });
+  renderChordGrid();
+}
+function renderChordGrid(){
+  const grid=document.getElementById('chordGrid');
+  grid.innerHTML='';
+  (CHORD_GROUPS[currentGroup]||[]).forEach(cn=>{
+    const vs=CHORD_DB[cn]; if(!vs) return;
+    const v=vs[0];
+    const card=document.createElement('div');
+    card.className='chord-card';
+    card.innerHTML=`<div class="cc-name">${cn}</div><div class="cc-pos">${v.pos}</div><div class="mini-diagram">${renderDiagram(v.frets,v.barre)}</div>`;
+    card.addEventListener('click',()=>{
+      loadFrets(v.frets);
+      document.querySelectorAll('#chordGrid .chord-card').forEach(c=>c.classList.remove('active-card'));
+      card.classList.add('active-card');
+    });
+    grid.appendChild(card);
+  });
+}
+
+// ── OCTAVE FINDER ──────────────────────────────────
+let selectedNote=null;
+function buildNoteSelector(){
+  const sel=document.getElementById('noteSelector');
+  NOTES.forEach(note=>{
+    const btn=document.createElement('button');
+    btn.className='note-btn'; btn.textContent=note;
+    btn.addEventListener('click',()=>{
+      selectedNote=note;
+      document.querySelectorAll('.note-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active'); buildOctaveGrid();
+    });
+    sel.appendChild(btn);
+  });
+}
+function buildOctaveGrid(){
+  const grid=document.getElementById('octaveGrid');
+  grid.innerHTML=''; if(!selectedNote) return;
+  const ti=NOTES.indexOf(selectedNote);
+  for(let s=0;s<NUM_STRINGS;s++){
+    const row=document.createElement('div'); row.className='octave-row';
+    const nd=document.createElement('div'); nd.className='octave-str-name'; nd.textContent=STRING_NAMES[s]; row.appendChild(nd);
+    // Open string col
+    const oc=document.createElement('div');
+    const isOpenMatch=OPEN_NOTES[s]===ti;
+    oc.className='octave-open'+(isOpenMatch?' highlight':'');
+    oc.textContent=NOTES[OPEN_NOTES[s]]; row.appendChild(oc);
+    for(let f=1;f<=NUM_FRETS;f++){
+      const ni=noteAt(s,f),match=ni===ti;
+      const cell=document.createElement('div');
+      cell.className='octave-cell'+(match?' highlight':'');
+      const sp=document.createElement('span'); sp.textContent=NOTES[ni]; cell.appendChild(sp);
+      row.appendChild(cell);
+    }
+    grid.appendChild(row);
+  }
+}
+
+// ── INIT ───────────────────────────────────────────
+buildFretboard();
+buildChordBrowser();
+buildNoteSelector();
+</script>
+</body>
+</html>
